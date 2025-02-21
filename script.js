@@ -1,4 +1,21 @@
-const OPERATORS_JSON_URL = "operators.json";
+// Firebase Configuration
+
+const firebaseConfig = {
+    apiKey: "AIzaSyDTPTpz6Hbi3raxlX0g9p6dJuTiHZKinFY",
+    authDomain: "arknights-poll-eed5d.firebaseapp.com",
+    databaseURL: "https://arknights-poll-eed5d-default-rtdb.firebaseio.com",
+    projectId: "arknights-poll-eed5d",
+    storageBucket: "arknights-poll-eed5d.firebasestorage.app",
+    messagingSenderId: "945776316851",
+    appId: "1:945776316851:web:1ae9bb90bc48e57d9ebbc6"
+  };
+  
+  
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+const OPERATORS_JSON_URL = "operators.json"; // Preprocessed JSON
 
 let operators = [];
 
@@ -31,8 +48,8 @@ function getRandomOperators() {
 
     document.getElementById("left-img").src = leftOperator.img;
     document.getElementById("right-img").src = rightOperator.img;
-    document.getElementById("left-img").alt = leftOperator.name;
-    document.getElementById("right-img").alt = rightOperator.name;
+    document.getElementById("left-name").textContent = leftOperator.name;
+    document.getElementById("right-name").textContent = rightOperator.name;
 }
 
 document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator));
@@ -40,8 +57,36 @@ document.getElementById("right-vote").addEventListener("click", () => vote(right
 
 function vote(winner) {
     console.log(`${winner.name} wins!`);
+    const operatorID = winner.id;
+
+    // Increment the operator's vote count in Firebase
+    database.ref("votes/" + operatorID).transaction(currentVotes => {
+        return (currentVotes || 0) + 1;
+    });
+
     getRandomOperators();
 }
 
-// Load the operator data first
+// Display rankings
+function displayRankings() {
+    database.ref("votes").orderByValue().limitToLast(10).once("value", snapshot => {
+        const rankings = [];
+        snapshot.forEach(child => {
+            rankings.push({ id: child.key, votes: child.val() });
+        });
+
+        rankings.reverse(); // Show highest first
+        const rankingHTML = rankings.map(op => {
+            let operator = operators.find(o => o.id === op.id);
+            return `<li>${operator ? operator.name : op.id}: ${op.votes} votes</li>`;
+        }).join("");
+
+        document.getElementById("rankings").innerHTML = `<ul>${rankingHTML}</ul>`;
+    });
+}
+
+// Refresh rankings every 10 seconds
+setInterval(displayRankings, 10000);
+
+// Load everything
 loadOperatorData();
