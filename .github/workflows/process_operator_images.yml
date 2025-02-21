@@ -1,0 +1,73 @@
+name: Update Operator Image Data
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs once per day at midnight UTC
+  workflow_dispatch:  # Allows manual runs
+
+permissions:
+  contents: write  # Grant permission to commit changes
+
+jobs:
+  fetch-operator-images:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Fetch Latest Commit SHA from cn Branch
+        run: |
+          curl -s "https://api.github.com/repos/ArknightsAssets/ArknightsAssets/branches/cn" > branch.json
+          COMMIT_SHA=$(jq -r '.commit.sha' branch.json)
+          echo "Latest commit: $COMMIT_SHA"
+          echo "$COMMIT_SHA" > commit_sha.txt
+
+      - name: Fetch Operator Image Data
+        run: |
+          COMMIT_SHA=$(cat commit_sha.txt)
+          # Fetch the latest tree for the latest commit in the cn branch
+          curl -s "https://api.github.com/repos/ArknightsAssets/ArknightsAssets/git/trees/${COMMIT_SHA}?recursive=1" > data.json
+          # Filter for PNG images in the characters directory
+          jq -r '.tree[] | select(.path | test("assets/torappu/dynamicassets/arts/characters/.+\\.png$")) | .path' data.json > images.txt
+
+          python3 <<'EOF'
+          import json, urllib.parse, urllib.request
+
+          # Load operator name mappings
+          name_mapping_url = "https://raw.githubusercontent.com/PuppiizSunniiz/AN-EN-Tags/main/py/dict.json"
+          with urllib.request.urlopen(name_mapping_url) as response:
+              name_data = json.load(response)["Char"]["Code2Name"]
+
+          # Load image paths
+          with open("images.txt") as f:
+              image_paths = [line.strip() for line in f.readlines()]
+
+          operator_images = {}
+          for path in image_paths:
+              parts = path.split("/")
+              if len(parts) < 6:
+                  continue
+              # operator_id is the 6th element (index 5)
+              operator_id = parts[5]
+              if operator_id in name_data:
+                  if operator_id not in operator_images:
+                      operator_images[operator_id] = {"name": name_data[operator_id], "images": []}
+                  # Percent-encode each segment to handle characters like '#' correctly
+                  encoded_path = '/'.join(urllib.parse.quote(part, safe='') for part in path.split('/'))
+                  full_url = "https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets/cn/" + encoded_path
+                  operator_images[operator_id]["images"].append(full_url)
+
+          with open("operators.json", "w") as f:
+              json.dump(operator_images, f, indent=2)
+
+          print(f"Processed {len(operator_images)} operators.")
+          EOF
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add operators.json
+          git commit -m "Updated operator images" || echo "No changes to commit"
+          git push
