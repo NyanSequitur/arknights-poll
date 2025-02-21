@@ -1,24 +1,25 @@
+// Import Firebase modules and your injected config
 import firebaseConfig from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, runTransaction, get  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getDatabase, ref, runTransaction, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
 
-
+// Sign in anonymously (needed if your DB rules require auth)
 const auth = getAuth();
-signInAnonymously(auth).then(() => {
-    console.log("Signed in anonymously");
-}).catch((error) => {
-    console.error("Auth Error:", error);
-});
+signInAnonymously(auth)
+  .then(() => { console.log("Signed in anonymously"); })
+  .catch((error) => { console.error("Auth Error:", error); });
 
-const OPERATORS_JSON_URL = "operators.json"; // Preprocessed JSON
+// URL for the preprocessed operator data (with real names and image lists)
+const OPERATORS_JSON_URL = "operators.json";
 
 let operators = [];
 
+// Load operator data from the JSON file
 async function loadOperatorData() {
     try {
         const response = await fetch(OPERATORS_JSON_URL);
@@ -26,7 +27,7 @@ async function loadOperatorData() {
 
         operators = Object.keys(data).map(opID => ({
             id: opID,
-            name: data[opID].name,
+            name: data[opID].name,      // Real display name
             images: data[opID].images
         }));
 
@@ -38,9 +39,11 @@ async function loadOperatorData() {
 
 let leftOperator, rightOperator;
 
+// Pick two random operators for the vote UI
 function getRandomOperators() {
     if (operators.length < 2) return;
 
+    // Randomly select two distinct operators
     let [op1, op2] = operators.sort(() => 0.5 - Math.random()).slice(0, 2);
 
     leftOperator = { ...op1, img: op1.images[Math.floor(Math.random() * op1.images.length)] };
@@ -52,32 +55,56 @@ function getRandomOperators() {
     document.getElementById("right-name").textContent = rightOperator.name;
 }
 
-document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator));
-document.getElementById("right-vote").addEventListener("click", () => vote(rightOperator));
+// When a vote is cast, record a win for one and a loss for the other.
+document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator, rightOperator));
+document.getElementById("right-vote").addEventListener("click", () => vote(rightOperator, leftOperator));
 
-async function vote(winner) {
+async function vote(winner, loser) {
     console.log(`${winner.name} wins!`);
-    const operatorID = winner.id;
 
-    // Firebase transaction to increment vote count
-    const voteRef = ref(database, `votes/${operatorID}`);
-    runTransaction(voteRef, (currentVotes) => {
-        return (currentVotes || 0) + 1;
+    // Increment winner's win count
+    const winnerRef = ref(database, `votes/${winner.id}/wins`);
+    runTransaction(winnerRef, (currentWins) => {
+        return (currentWins || 0) + 1;
+    });
+
+    // Increment loser's loss count
+    const loserRef = ref(database, `votes/${loser.id}/losses`);
+    runTransaction(loserRef, (currentLosses) => {
+        return (currentLosses || 0) + 1;
     });
 
     getRandomOperators();
 }
 
+// Display rankings based on win percentage, filtering out operators with too few comparisons
+const MIN_COMPARISONS = 5; // Baseline number of comparisons required
+
 function displayRankings() {
     const rankingsRef = ref(database, "votes");
     get(rankingsRef).then((snapshot) => {
         if (snapshot.exists()) {
-            const rankings = Object.entries(snapshot.val())
-                .sort((a, b) => b[1] - a[1]) // Sort by votes descending
-                .slice(0, 10); // Get top 10
+            const allVotes = snapshot.val();  // { operatorID: { wins, losses } }
+            let rankings = [];
+
+            for (const opID in allVotes) {
+                const { wins = 0, losses = 0 } = allVotes[opID];
+                const total = wins + losses;
+                if (total >= MIN_COMPARISONS) {
+                    const winPct = wins / total;
+                    rankings.push({ id: opID, wins, losses, total, winPct });
+                }
+            }
+
+            // Sort operators by win percentage (highest first)
+            rankings.sort((a, b) => b.winPct - a.winPct);
+            rankings = rankings.slice(0, 10);
 
             const rankingHTML = rankings.map(op => {
-                return `<li>${op[0]}: ${op[1]} votes</li>`;
+                // Look up the real display name from our loaded operator data
+                const operator = operators.find(o => o.id === op.id);
+                const displayName = operator ? operator.name : op.id;
+                return `<li>${displayName}: ${(op.winPct * 100).toFixed(2)}% (${op.wins} wins, ${op.losses} losses, ${op.total} comparisons)</li>`;
             }).join("");
 
             document.getElementById("rankings").innerHTML = `<ul>${rankingHTML}</ul>`;
@@ -89,7 +116,8 @@ function displayRankings() {
     });
 }
 
+// Refresh rankings every 10 seconds
 setInterval(displayRankings, 10000);
 
-// Load everything
+// Initial load of operator data
 loadOperatorData();
