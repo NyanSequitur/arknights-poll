@@ -1,19 +1,17 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
 // Firebase Configuration
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
-import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
-
 const firebaseConfig = {
-    apiKey: "AIzaSyDTPTpz6Hbi3raxlX0g9p6dJuTiHZKinFY",
-    authDomain: "arknights-poll-eed5d.firebaseapp.com",
-    databaseURL: "https://arknights-poll-eed5d-default-rtdb.firebaseio.com",
-    projectId: "arknights-poll-eed5d",
-    storageBucket: "arknights-poll-eed5d.firebasestorage.app",
-    messagingSenderId: "945776316851",
-    appId: "1:945776316851:web:1ae9bb90bc48e57d9ebbc6"
-  };
-  
-  
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "SENDER_ID",
+    appId: "APP_ID"
+};
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
