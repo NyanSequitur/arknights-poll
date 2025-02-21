@@ -1,4 +1,4 @@
-const OPERATORS_JSON_URL = "https://nyansequitur.github.io/arknights-poll/operators.json"; // Adjust if needed
+const OPERATORS_JSON_URL = "operators.json";
 
 let operators = [];
 
