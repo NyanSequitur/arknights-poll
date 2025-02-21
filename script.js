@@ -1,7 +1,7 @@
 // Firebase Configuration
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
+import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyDTPTpz6Hbi3raxlX0g9p6dJuTiHZKinFY",
