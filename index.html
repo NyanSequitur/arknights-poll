@@ -18,33 +18,33 @@
 </head>
 
 <body>
-    <div id="scale-container">
-        <div id="center-container">
-            <h1>Which Operator is Better?</h1>
+    <div id="center-container">
+        <h1>Which Operator is Better?</h1>
+    </div>
+    <div id="poll-container">
+        <div class="operator" id="left-operator">
+            <img id="left-img" src="" alt="Operator 1" />
+            <p id="left-name"></p>
+            <button id="left-vote">Vote</button>
         </div>
-        <div id="poll-container">
-            <div class="operator" id="left-operator">
-                <img id="left-img" src="" alt="Operator 1" />
-                <p id="left-name"></p>
-                <button id="left-vote">Vote</button>
-            </div>
-            <div class="operator" id="right-operator">
-                <img id="right-img" src="" alt="Operator 2" />
-                <p id="right-name"></p>
-                <button id="right-vote">Vote</button>
-            </div>
-        </div>
-
-        <div id="center-container">
-            <h2>Top Operators</h2>
-            <div id="rankings">Loading...</div>
-            <div>
-                <button id="refresh-rankings">Refresh Rankings</button>
-                <button id="toggle-dark-mode">Toggle Dark Mode</button>
-            </div>
+        <div class="operator" id="right-operator">
+            <img id="right-img" src="" alt="Operator 2" />
+            <p id="right-name"></p>
+            <button id="right-vote">Vote</button>
         </div>
     </div>
 
+    <div id="center-container">
+
+        <h2>Top Operators</h2>
+        <div id="rankings">Loading...</div>
+        <div>
+            <button id="refresh-rankings">Refresh Rankings</button>
+            <button id="toggle-dark-mode">Toggle Dark Mode</button>
+        </div>
+    </div>
+
+    <!-- Using ES Modules -->
     <script type="module" src="script.js"></script>
 </body>
 

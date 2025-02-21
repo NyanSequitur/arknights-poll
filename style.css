@@ -68,3 +68,10 @@ button:disabled, button.disabled {
     align-items: center;
     justify-content: center;
   }
+
+  @media (max-width: 600px) {
+    #poll-container {
+        flex-direction: column;
+        gap: 20px; /* Adjust spacing as needed for vertical layout */
+    }
+}
