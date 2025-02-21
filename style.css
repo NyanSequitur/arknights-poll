@@ -50,6 +50,7 @@ button {
   border-radius: 5px;
   cursor: pointer;
   margin: 5px;
+  width: 75%;
 }
 
 button:hover:not(:disabled) {
@@ -73,10 +74,11 @@ button:disabled, button.disabled {
     #poll-container {
         flex-direction: column;
         gap: 20px; /* Adjust spacing as needed for vertical layout */
+        width: 100%; /* Full width on small screens */
     }
 
     .operator {
-        max-width: 100%; /* Full width on small screens */
+        width: 100%; /* Full width on small screens */
     }
 
     img {
@@ -85,5 +87,8 @@ button:disabled, button.disabled {
 
     button {
         padding: 5px 10px; /* Adjust as needed */
+
     }
+
+
 }
