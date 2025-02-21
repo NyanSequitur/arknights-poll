@@ -5,6 +5,9 @@ on:
     - cron: '0 0 * * *'  # Runs once per day at midnight UTC
   workflow_dispatch:  # Allows manual runs
 
+permissions:
+  contents: write  # Grant permission to commit changes
+
 jobs:
   fetch-operator-images:
     runs-on: ubuntu-latest
@@ -48,7 +51,7 @@ jobs:
 
       - name: Commit and Push Changes
         run: |
-          git config --global user.name "GitHub Actions"
+          git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
           git add operators.json
           git commit -m "Updated operator images" || echo "No changes to commit"
