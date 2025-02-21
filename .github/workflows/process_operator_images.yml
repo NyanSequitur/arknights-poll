@@ -43,7 +43,7 @@ jobs:
               operator_id = parts[5]
               if operator_id in name_data:
                   operator_images.setdefault(operator_id, {"name": name_data[operator_id], "images": []})
-                  operator_images[operator_id]["images"].append(f"https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets/main/{path}")
+                  operator_images[operator_id]["images"].append(f"https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets/cn/{path}")
 
           with open("operators.json", "w") as f:
               json.dump(operator_images, f, indent=2)
