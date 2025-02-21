@@ -78,7 +78,7 @@ async function vote(winner, loser) {
 }
 
 // Display rankings based on win percentage, filtering out operators with too few comparisons
-const MIN_COMPARISONS = 5; // Baseline number of comparisons required
+const MIN_COMPARISONS = 1; // Baseline number of comparisons required
 
 function displayRankings() {
     const rankingsRef = ref(database, "votes");
