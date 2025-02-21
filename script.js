@@ -46,37 +46,40 @@ function getRandomOperators() {
 document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator));
 document.getElementById("right-vote").addEventListener("click", () => vote(rightOperator));
 
-function vote(winner) {
+async function vote(winner) {
     console.log(`${winner.name} wins!`);
     const operatorID = winner.id;
 
-    // Increment the operator's vote count in Firebase
-    database.ref("votes/" + operatorID).transaction(currentVotes => {
+    // Firebase transaction to increment vote count
+    const voteRef = ref(database, `votes/${operatorID}`);
+    runTransaction(voteRef, (currentVotes) => {
         return (currentVotes || 0) + 1;
     });
 
     getRandomOperators();
 }
 
-// Display rankings
 function displayRankings() {
-    database.ref("votes").orderByValue().limitToLast(10).once("value", snapshot => {
-        const rankings = [];
-        snapshot.forEach(child => {
-            rankings.push({ id: child.key, votes: child.val() });
-        });
+    const rankingsRef = ref(database, "votes");
+    get(rankingsRef).then((snapshot) => {
+        if (snapshot.exists()) {
+            const rankings = Object.entries(snapshot.val())
+                .sort((a, b) => b[1] - a[1]) // Sort by votes descending
+                .slice(0, 10); // Get top 10
 
-        rankings.reverse(); // Show highest first
-        const rankingHTML = rankings.map(op => {
-            let operator = operators.find(o => o.id === op.id);
-            return `<li>${operator ? operator.name : op.id}: ${op.votes} votes</li>`;
-        }).join("");
+            const rankingHTML = rankings.map(op => {
+                return `<li>${op[0]}: ${op[1]} votes</li>`;
+            }).join("");
 
-        document.getElementById("rankings").innerHTML = `<ul>${rankingHTML}</ul>`;
+            document.getElementById("rankings").innerHTML = `<ul>${rankingHTML}</ul>`;
+        } else {
+            document.getElementById("rankings").innerHTML = "<p>No votes yet.</p>";
+        }
+    }).catch((error) => {
+        console.error("Error fetching rankings:", error);
     });
 }
 
-// Refresh rankings every 10 seconds
 setInterval(displayRankings, 10000);
 
 // Load everything
