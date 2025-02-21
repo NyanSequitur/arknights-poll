@@ -1,6 +1,15 @@
 import firebaseConfig from './config.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, runTransaction, get  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+const auth = getAuth();
+signInAnonymously(auth).then(() => {
+    console.log("Signed in anonymously");
+}).catch((error) => {
+    console.error("Auth Error:", error);
+});
+
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
