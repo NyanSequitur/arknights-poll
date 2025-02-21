@@ -41,6 +41,8 @@ const OPERATORS_JSON_URL = "operators.json";
 
 let operators = [];
 let leftOperator, rightOperator;
+let nextPair = null;  // Store preloaded next pair
+let previousPair = null;  // Store previously selected pair
 
 async function loadOperatorData() {
   try {
@@ -52,6 +54,9 @@ async function loadOperatorData() {
       name: data[opID].name,
       images: data[opID].images
     }));
+    
+    // log number of operators loaded
+    console.log(`Loaded ${operators.length} operators.`);
 
     getRandomOperators();
   } catch (error) {
@@ -59,27 +64,72 @@ async function loadOperatorData() {
   }
 }
 
-// Select two random operators for voting
-function getRandomOperators() {
-  if (operators.length < 2) return;
+// Helper: return a secure random integer in the range [0, max)
+function secureRandomInt(max) {
+    const array = new Uint32Array(1);
+    window.crypto.getRandomValues(array);
+    return array[0] % max;
+  }
+  
+  // Helper: pick two distinct operators using secure randomness
+  function getTwoDistinctRandomOperators() {
+    if (operators.length < 2) return null;
+    const index1 = secureRandomInt(operators.length);
+    let index2 = secureRandomInt(operators.length - 1);
+    // Ensure distinctness: if index2 is equal to or past index1, shift it by one.
+    if (index2 >= index1) index2++;
+    return [operators[index1], operators[index2]];
+  }
+  
+  function preloadNextOperators() {
+    if (operators.length < 2) return;
+  
+    const pair = getTwoDistinctRandomOperators();
+    if (!pair) return;
+    const [op1, op2] = pair;
+  
+    // Securely select a random image for each operator
+    const nextLeftOperator = { 
+      ...op1, 
+      img: op1.images[secureRandomInt(op1.images.length)]
+    };
+    const nextRightOperator = { 
+      ...op2, 
+      img: op2.images[secureRandomInt(op2.images.length)]
+    };
+  
+    // Preload images
+    new Image().src = nextLeftOperator.img;
+    new Image().src = nextRightOperator.img;
+  
+    nextPair = { leftOperator: nextLeftOperator, rightOperator: nextRightOperator };
+  }
+  
+  function getRandomOperators() {
+    if (operators.length < 2) return;
+  
+    if (nextPair) {
+      leftOperator = nextPair.leftOperator;
+      rightOperator = nextPair.rightOperator;
+    } else {
+      const pair = getTwoDistinctRandomOperators();
+      if (!pair) return;
+      const [op1, op2] = pair;
+      leftOperator = { ...op1, img: op1.images[secureRandomInt(op1.images.length)] };
+      rightOperator = { ...op2, img: op2.images[secureRandomInt(op2.images.length)] };
+    }
+  
+    // Update the DOM
+    document.getElementById("left-img").src = leftOperator.img;
+    document.getElementById("right-img").src = rightOperator.img;
+    document.getElementById("left-name").textContent = leftOperator.name;
+    document.getElementById("right-name").textContent = rightOperator.name;
+  
+    // Preload the next pair
+    preloadNextOperators();
+  }
 
-  let [op1, op2] = operators.sort(() => 0.5 - Math.random()).slice(0, 2);
-
-  leftOperator = { 
-    ...op1, 
-    img: op1.images[Math.floor(Math.random() * op1.images.length)] 
-  };
-  rightOperator = { 
-    ...op2, 
-    img: op2.images[Math.floor(Math.random() * op2.images.length)] 
-  };
-
-  document.getElementById("left-img").src = leftOperator.img;
-  document.getElementById("right-img").src = rightOperator.img;
-  document.getElementById("left-name").textContent = leftOperator.name;
-  document.getElementById("right-name").textContent = rightOperator.name;
-}
-
+  
 /** Voting events: record a win & loss */
 document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator, rightOperator));
 document.getElementById("right-vote").addEventListener("click", () => vote(rightOperator, leftOperator));
@@ -95,9 +145,9 @@ function vote(winner, loser) {
   const loserRef = ref(database, `votes/${loser.id}/losses`);
   runTransaction(loserRef, current => (current || 0) + 1);
 
+  // Use the preloaded images for the next comparison
   getRandomOperators();
 }
-
 /**
  * --------------------------------------------
  *    LEADERBOARD: CACHING & COOLDOWN LOGIC
@@ -145,20 +195,48 @@ function displayRankings() {
           }
         }
 
-        // Sort by win percentage (highest first), top 10
-        rankings.sort((a, b) => b.winPct - a.winPct);
+        // Sort by win percentage (highest first), then by win count in case of ties, top 10
+        rankings.sort((a, b) => {
+          if (b.winPct === a.winPct) {
+            return b.wins - a.wins;
+          }
+          return b.winPct - a.winPct;
+        });
         rankings = rankings.slice(0, 10);
 
         // Build HTML
         let rankingHTML;
         if (rankings.length > 0) {
-          rankingHTML = rankings.map(op => {
+          rankingHTML = `
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Operator</th>
+                  <th>Win %</th>
+                  <th>Wins</th>
+                  <th>Losses</th>
+                  <th>Comparisons</th>
+                </tr>
+              </thead>
+              <tbody>
+          ` + rankings.map((op, idx) => {
             const operator = operators.find(o => o.id === op.id);
             const displayName = operator ? operator.name : op.id;
-            return `<li>${displayName}: ${(op.winPct * 100).toFixed(2)}% ` +
-                   `(${op.wins} wins, ${op.losses} losses, ${op.total} comparisons)</li>`;
-          }).join("");
-          rankingHTML = `<ul>${rankingHTML}</ul>`;
+            return `
+              <tr>
+                <td>${idx + 1}</td>
+                <td>${displayName}</td>
+                <td>${(op.winPct * 100).toFixed(2)}%</td>
+                <td>${op.wins}</td>
+                <td>${op.losses}</td>
+                <td>${op.total}</td>
+              </tr>
+            `;
+          }).join("") + `
+              </tbody>
+            </table>
+          `;
         } else {
           rankingHTML = "<p>No operators meet the minimum comparisons yet.</p>";
         }
