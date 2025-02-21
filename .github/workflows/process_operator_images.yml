@@ -1,58 +1,42 @@
-name: Update Operator Image Data
+- name: Fetch Operator Image Data
+  run: |
+    echo "Fetching file tree from GitHub API..."
+    curl -s "https://api.github.com/repos/ArknightsAssets/ArknightsAssets/git/trees/34c7fc91e3192187a8763ca98e9a782668ec23fe?recursive=1" > data.json
+    echo "Filtering image paths with jq..."
+    jq -r '.tree[] | select(.path | test("assets/torappu/dynamicassets/arts/characters/.+\\.png$")) | .path' data.json > images.txt
+    echo "Image paths found:"
+    cat images.txt
 
-on:
-  schedule:
-    - cron: '0 0 * * *'  # Runs once per day at midnight UTC
-  workflow_dispatch:  # Allows manual runs
+    python3 <<EOF
+import json
+import urllib.request
 
-permissions:
-  contents: write  # Grant permission to commit changes
+print("Loading operator name mappings...", flush=True)
+name_mapping_url = "https://raw.githubusercontent.com/PuppiizSunniiz/AN-EN-Tags/main/py/dict.json"
+with urllib.request.urlopen(name_mapping_url) as response:
+    name_data = json.load(response)["Char"]["Code2Name"]
+print("Name mapping loaded for {} operators.".format(len(name_data)), flush=True)
 
-jobs:
-  fetch-operator-images:
-    runs-on: ubuntu-latest
+with open("images.txt") as f:
+    image_paths = [line.strip() for line in f.readlines()]
+print("Found {} image paths.".format(len(image_paths)), flush=True)
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+operator_images = {}
+for path in image_paths:
+    parts = path.split("/")
+    if len(parts) < 6:
+        print("Skipping path (not enough parts):", path, flush=True)
+        continue
+    operator_id = parts[5]
+    if operator_id in name_data:
+        operator_images.setdefault(operator_id, {"name": name_data[operator_id], "images": []})
+        full_url = "https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets/main/" + path
+        operator_images[operator_id]["images"].append(full_url)
+        print("Added image for {}: {}".format(operator_id, full_url), flush=True)
+    else:
+        print("Operator ID {} not in name mapping, skipping.".format(operator_id), flush=True)
 
-      - name: Fetch Operator Image Data
-        run: |
-          curl -s "https://api.github.com/repos/ArknightsAssets/ArknightsAssets/git/trees/34c7fc91e3192187a8763ca98e9a782668ec23fe?recursive=1" > data.json
-          jq -r '.tree[] | select(.path | test("arts/characters/.+\\.png$")) | .path' data.json > images.txt
-
-          python3 <<EOF
-          import json
-
-          # Load operator name mappings
-          import urllib.request
-          name_mapping_url = "https://raw.githubusercontent.com/PuppiizSunniiz/AN-EN-Tags/main/py/dict.json"
-          with urllib.request.urlopen(name_mapping_url) as response:
-              name_data = json.load(response)["Char"]["Code2Name"]
-
-          # Load image paths
-          with open("images.txt") as f:
-              image_paths = [line.strip() for line in f.readlines()]
-
-          # Organize images by operator
-          operator_images = {}
-          for path in image_paths:
-              operator_id = path.split("/")[3]  # Extract operator ID from path
-              if operator_id in name_data:
-                  operator_images.setdefault(operator_id, {"name": name_data[operator_id], "images": []})
-                  operator_images[operator_id]["images"].append(f"https://raw.githubusercontent.com/ArknightsAssets/ArknightsAssets/main/assets/torappu/dynamicassets/{path}")
-
-          # Save to JSON
-          with open("operators.json", "w") as f:
-              json.dump(operator_images, f, indent=2)
-
-          print(f"Processed {len(operator_images)} operators.")
-          EOF
-
-      - name: Commit and Push Changes
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "actions@github.com"
-          git add operators.json
-          git commit -m "Updated operator images" || echo "No changes to commit"
-          git push
+print("Processed {} operators.".format(len(operator_images)), flush=True)
+with open("operators.json", "w") as f:
+    json.dump(operator_images, f, indent=2)
+EOF
