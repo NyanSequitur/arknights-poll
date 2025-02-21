@@ -3,17 +3,17 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getDatabase, ref, runTransaction, get  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+
 const auth = getAuth();
 signInAnonymously(auth).then(() => {
     console.log("Signed in anonymously");
 }).catch((error) => {
     console.error("Auth Error:", error);
 });
-
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const database = getDatabase(app);
 
 const OPERATORS_JSON_URL = "operators.json"; // Preprocessed JSON
 
