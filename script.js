@@ -1,5 +1,8 @@
 // Firebase Configuration
 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
 const firebaseConfig = {
     apiKey: "AIzaSyDTPTpz6Hbi3raxlX0g9p6dJuTiHZKinFY",
     authDomain: "arknights-poll-eed5d.firebaseapp.com",
@@ -12,8 +15,8 @@ const firebaseConfig = {
   
   
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
 
 const OPERATORS_JSON_URL = "operators.json"; // Preprocessed JSON
 
