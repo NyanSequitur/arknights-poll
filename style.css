@@ -74,4 +74,16 @@ button:disabled, button.disabled {
         flex-direction: column;
         gap: 20px; /* Adjust spacing as needed for vertical layout */
     }
+
+    .operator {
+        max-width: 100%; /* Full width on small screens */
+    }
+
+    img {
+        max-height: 200px; /* Adjust as needed */
+    }
+
+    button {
+        padding: 5px 10px; /* Adjust as needed */
+    }
 }
