@@ -1,9 +1,33 @@
 const NAME_MAPPING_URL = "https://raw.githubusercontent.com/PuppiizSunniiz/AN-EN-Tags/main/py/dict.json";
 const GITHUB_API_URL = "https://api.github.com/repos/ArknightsAssets/ArknightsAssets/contents/assets/torappu/dynamicassets/arts/characters/";
+const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 let operators = [];
 
+function getCachedData(key) {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp > CACHE_EXPIRY) {
+        localStorage.removeItem(key); // Expired cache
+        return null;
+    }
+    return data;
+}
+
+function setCachedData(key, data) {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+}
+
 async function loadOperatorData() {
+    let cachedOperators = getCachedData("operator_names");
+    if (cachedOperators) {
+        operators = cachedOperators;
+        getRandomOperators();
+        return;
+    }
+
     try {
         const response = await fetch(NAME_MAPPING_URL);
         const data = await response.json();
@@ -14,6 +38,7 @@ async function loadOperatorData() {
             name: charData[opID]
         }));
 
+        setCachedData("operator_names", operators);
         getRandomOperators();
     } catch (error) {
         console.error("Error loading operator data:", error);
@@ -21,6 +46,9 @@ async function loadOperatorData() {
 }
 
 async function getOperatorImages(operatorID) {
+    let cachedImages = getCachedData(`images_${operatorID}`);
+    if (cachedImages) return cachedImages;
+
     try {
         const response = await fetch(GITHUB_API_URL + operatorID);
         if (!response.ok) throw new Error(`Failed to fetch images for ${operatorID}`);
@@ -30,7 +58,12 @@ async function getOperatorImages(operatorID) {
             .filter(file => file.name.endsWith(".png")) // Only keep PNGs
             .map(file => file.download_url); // Get direct image URLs
 
-        return imageFiles.length > 0 ? imageFiles : null;
+        if (imageFiles.length > 0) {
+            setCachedData(`images_${operatorID}`, imageFiles);
+            return imageFiles;
+        } else {
+            return null;
+        }
     } catch (error) {
         console.error(`Error fetching images for ${operatorID}:`, error);
         return null;
