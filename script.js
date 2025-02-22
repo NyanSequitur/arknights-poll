@@ -156,7 +156,7 @@ function vote(winner, loser) {
 const rankingsDiv = document.getElementById("rankings");
 const refreshBtn = document.getElementById("refresh-rankings");
 
-const MIN_COMPARISONS = 1;        // baseline # of comparisons
+const MIN_COMPARISONS = 5;        // baseline # of comparisons
 const MIN_REFRESH_INTERVAL = 10000; // 10 seconds
 const LAST_REFRESH_TIME_KEY = "arkpoll_lastRefresh";
 const LAST_LEADERBOARD_KEY = "arkpoll_lastLeaderboardHTML";
