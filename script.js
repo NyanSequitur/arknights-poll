@@ -1,213 +1,317 @@
-import firebaseConfig from './config.js';
+import {
+  firebaseConfig,
+  LEADERBOARD_MIN_COMPARISONS,
+  LEADERBOARD_REFRESH_INTERVAL,
+  DB_DISCONNECT_TIMEOUT,
+  OPERATORS_JSON_URL,
+  PRELOAD_COUNT,
+} from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-import { getDatabase, ref, runTransaction, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import {
+  getDatabase,
+  ref,
+  get,
+  update,
+  increment,
+  query,
+  orderByChild,
+  startAt,
+  goOffline,
+  goOnline,
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// Initialize Firebase
+/*========================================
+=           LOGGING UTILITY            =
+========================================*/
+const logger = {
+  error: (...args) => console.error("[ERROR]", ...args),
+  warn: (...args) => console.warn("[WARN]", ...args),
+  info: (...args) => console.info("[INFO]", ...args),
+  log: (...args) => console.log("[LOG]", ...args),
+  debug: (...args) => console.debug("[DEBUG]", ...args)
+};
+
+/*========================================
+=            FIREBASE SETUP            =
+========================================*/
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
-
-// Sign in anonymously
 const auth = getAuth();
-signInAnonymously(auth)
-  .then(() => console.log("Signed in anonymously"))
-  .catch((error) => console.error("Auth Error:", error));
 
-/** 
- * --------------------------------------------
- *        DARK MODE: REMEMBER USER CHOICE
- * --------------------------------------------
- */
+signInAnonymously(auth)
+  .then(() => logger.info("Signed in anonymously"))
+  .catch((error) => logger.error("Auth Error:", error));
+
+/*========================================
+=            DARK MODE SETUP           =
+========================================*/
+// Cache DOM elements
 const darkModeBtn = document.getElementById("toggle-dark-mode");
 const DARK_MODE_KEY = "arkpoll_darkMode";
 
 function initDarkMode() {
-  const storedMode = localStorage.getItem(DARK_MODE_KEY);
-  if (storedMode === "true") {
-    document.documentElement.classList.add("dark-mode"); // Apply to <html> early
+  if (localStorage.getItem(DARK_MODE_KEY) === "true") {
+    document.documentElement.classList.add("dark-mode");
+    logger.debug("Dark mode enabled on init.");
   }
 }
-
 darkModeBtn.addEventListener("click", () => {
-  const isDark = document.documentElement.classList.toggle("dark-mode"); // Apply toggle to <html>
+  const isDark = document.documentElement.classList.toggle("dark-mode");
   localStorage.setItem(DARK_MODE_KEY, isDark.toString());
+  logger.info(`Dark mode ${isDark ? "enabled" : "disabled"}.`);
 });
-/** 
- * --------------------------------------------
- *     OPERATOR DATA & PAIRWISE VOTING
- * --------------------------------------------
- */
-const OPERATORS_JSON_URL = "operators.json";
 
+/*========================================
+=    OPERATOR DATA & PAIRWISE VOTING    =
+========================================*/
 let operators = [];
+// New: create a lookup map for operators
+let operatorMap = new Map();
+
 let leftOperator, rightOperator;
-let nextPair = null;  // Store preloaded next pair
-let previousPair = null;  // Store previously selected pair
+let preloadedPairs = [];
+
+// Cache frequently accessed DOM elements for operator display
+const leftImgEl = document.getElementById("left-img");
+const rightImgEl = document.getElementById("right-img");
+const leftNameEl = document.getElementById("left-name");
+const rightNameEl = document.getElementById("right-name");
+
+// Helper: get a secure random integer in [0, max)
+const secureRandomInt = (max) => {
+  const array = new Uint32Array(1);
+  window.crypto.getRandomValues(array);
+  return array[0] % max;
+};
+
+// Helper: return a random image from an operator's image list
+const getRandomImage = (images) => images[secureRandomInt(images.length)];
+
+// Helper: return a new operator object with a random image selected
+const getOperatorWithRandomImage = (operator) => ({
+  ...operator,
+  img: getRandomImage(operator.images),
+});
+
+// Returns two distinct operators using secure randomness
+function getTwoDistinctRandomOperators() {
+  if (operators.length < 2) {
+    logger.warn("Not enough operators available for selection.");
+    return null;
+  }
+  const index1 = secureRandomInt(operators.length);
+  let index2 = secureRandomInt(operators.length - 1);
+  if (index2 >= index1) index2++;
+  return [operators[index1], operators[index2]];
+}
 
 async function loadOperatorData() {
   try {
     const response = await fetch(OPERATORS_JSON_URL);
     const data = await response.json();
-
-    operators = Object.keys(data).map(opID => ({
+    operators = Object.keys(data).map((opID) => ({
       id: opID,
       name: data[opID].name,
-      images: data[opID].images
+      images: data[opID].images,
     }));
-    
-    // log number of operators loaded
-    console.log(`Loaded ${operators.length} operators.`);
-
+    // Build a lookup map for quick operator access later
+    operatorMap = new Map(operators.map((op) => [op.id, op]));
+    logger.info(`Loaded ${operators.length} operators.`);
+    preloadNextOperators();
     getRandomOperators();
   } catch (error) {
-    console.error("Error loading operator data:", error);
+    logger.error("Error loading operator data:", error);
   }
 }
 
-// Helper: return a secure random integer in the range [0, max)
-function secureRandomInt(max) {
-    const array = new Uint32Array(1);
-    window.crypto.getRandomValues(array);
-    return array[0] % max;
-  }
-  
-  // Helper: pick two distinct operators using secure randomness
-  function getTwoDistinctRandomOperators() {
-    if (operators.length < 2) return null;
-    const index1 = secureRandomInt(operators.length);
-    let index2 = secureRandomInt(operators.length - 1);
-    // Ensure distinctness: if index2 is equal to or past index1, shift it by one.
-    if (index2 >= index1) index2++;
-    return [operators[index1], operators[index2]];
-  }
-  
-  function preloadNextOperators() {
-    if (operators.length < 2) return;
-  
+// Preload enough voting pairs (questions) to meet the PRELOAD_COUNT
+function preloadNextOperators() {
+  while (preloadedPairs.length < PRELOAD_COUNT) {
+    if (operators.length < 2) {
+      logger.warn("Not enough operators to preload pairs.");
+      return;
+    }
     const pair = getTwoDistinctRandomOperators();
     if (!pair) return;
     const [op1, op2] = pair;
-  
-    // Securely select a random image for each operator
-    const nextLeftOperator = { 
-      ...op1, 
-      img: op1.images[secureRandomInt(op1.images.length)]
+    const pairObj = {
+      leftOperator: getOperatorWithRandomImage(op1),
+      rightOperator: getOperatorWithRandomImage(op2),
     };
-    const nextRightOperator = { 
-      ...op2, 
-      img: op2.images[secureRandomInt(op2.images.length)]
-    };
-  
-    // Preload images
-    new Image().src = nextLeftOperator.img;
-    new Image().src = nextRightOperator.img;
-  
-    nextPair = { leftOperator: nextLeftOperator, rightOperator: nextRightOperator };
+    // Preload images for this pair
+    [pairObj.leftOperator.img, pairObj.rightOperator.img].forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+    preloadedPairs.push(pairObj);
+    logger.debug("Preloaded a new operator pair. Queue length:", preloadedPairs.length);
   }
-  
-  function getRandomOperators() {
-    if (operators.length < 2) return;
-  
-    if (nextPair) {
-      leftOperator = nextPair.leftOperator;
-      rightOperator = nextPair.rightOperator;
-    } else {
-      const pair = getTwoDistinctRandomOperators();
-      if (!pair) return;
-      const [op1, op2] = pair;
-      leftOperator = { ...op1, img: op1.images[secureRandomInt(op1.images.length)] };
-      rightOperator = { ...op2, img: op2.images[secureRandomInt(op2.images.length)] };
-    }
-  
-    // Update the DOM
-    document.getElementById("left-img").src = leftOperator.img;
-    document.getElementById("right-img").src = rightOperator.img;
-    document.getElementById("left-name").textContent = leftOperator.name;
-    document.getElementById("right-name").textContent = rightOperator.name;
-  
-    // Preload the next pair
-    preloadNextOperators();
-  }
-
-  
-/** Voting events: record a win & loss */
-document.getElementById("left-vote").addEventListener("click", () => vote(leftOperator, rightOperator));
-document.getElementById("right-vote").addEventListener("click", () => vote(rightOperator, leftOperator));
-
-function vote(winner, loser) {
-  console.log(`${winner.name} wins!`);
-
-  // Increment winner's win count
-  const winnerRef = ref(database, `votes/${winner.id}/wins`);
-  runTransaction(winnerRef, current => (current || 0) + 1);
-
-  // Increment loser's loss count
-  const loserRef = ref(database, `votes/${loser.id}/losses`);
-  runTransaction(loserRef, current => (current || 0) + 1);
-
-  // Use the preloaded images for the next comparison
-  getRandomOperators();
 }
-/**
- * --------------------------------------------
- *    LEADERBOARD: CACHING & COOLDOWN LOGIC
- * --------------------------------------------
- */
+
+// Get and display a random pair of operators from the preloaded queue
+function getRandomOperators() {
+  if (operators.length < 2) return;
+  let pair;
+  if (preloadedPairs.length > 0) {
+    pair = preloadedPairs.shift();
+    logger.debug("Using preloaded operator pair. Remaining queue length:", preloadedPairs.length);
+  } else {
+    logger.debug("No preloaded pairs available, generating on the fly.");
+    const randomPair = getTwoDistinctRandomOperators();
+    if (!randomPair) return;
+    const [op1, op2] = randomPair;
+    pair = {
+      leftOperator: getOperatorWithRandomImage(op1),
+      rightOperator: getOperatorWithRandomImage(op2),
+    };
+  }
+  leftOperator = pair.leftOperator;
+  rightOperator = pair.rightOperator;
+  // Update cached DOM elements with the selected operator data
+  leftImgEl.src = leftOperator.img;
+  rightImgEl.src = rightOperator.img;
+  leftNameEl.textContent = leftOperator.name;
+  rightNameEl.textContent = rightOperator.name;
+  // Refill the preloaded pairs if needed
+  preloadNextOperators();
+}
+
+/*========================================
+=         VOTING BUTTON HANDLERS       =
+========================================*/
+// Cache voting buttons
+const leftVoteBtn = document.getElementById("left-vote");
+const rightVoteBtn = document.getElementById("right-vote");
+
+function disableVotingButtons() {
+  leftVoteBtn.disabled = true;
+  rightVoteBtn.disabled = true;
+  logger.debug("Voting buttons disabled.");
+}
+
+function enableVotingButtons() {
+  leftVoteBtn.disabled = false;
+  rightVoteBtn.disabled = false;
+  logger.debug("Voting buttons enabled.");
+}
+
+leftVoteBtn.addEventListener("click", () =>
+  vote(leftOperator, rightOperator)
+);
+rightVoteBtn.addEventListener("click", () =>
+  vote(rightOperator, leftOperator)
+);
+
+/*========================================
+=       FIREBASE CONNECTION MANAGEMENT   =
+========================================*/
+// New flag to track connection state
+let isOnline = true;
+let disconnectTimer = null;
+
+function ensureOnline() {
+  if (!isOnline) {
+    goOnline(database);
+    isOnline = true;
+    logger.debug("Connection set to online.");
+  }
+  if (disconnectTimer) {
+    clearTimeout(disconnectTimer);
+    disconnectTimer = null;
+    logger.debug("Cleared disconnect timer; staying online.");
+  }
+}
+
+function disconnectAfterUpdate() {
+  disconnectTimer = setTimeout(() => {
+    goOffline(database);
+    isOnline = false;
+    logger.info("Database connection closed due to inactivity.");
+  }, DB_DISCONNECT_TIMEOUT);
+}
+
+/*========================================
+=             VOTING LOGIC             =
+========================================*/
+function vote(winner, loser) {
+  ensureOnline();
+  logger.info(`${winner.name} wins!`);
+
+  // Disable vote buttons immediately to prevent multiple clicks
+  disableVotingButtons();
+
+  // Optimistically update the UI immediately (fire-and-forget)
+  getRandomOperators();
+
+  const updates = {
+    [`votes/${winner.id}/wins`]: increment(1),
+    [`votes/${winner.id}/total`]: increment(1),
+    [`votes/${loser.id}/losses`]: increment(1),
+    [`votes/${loser.id}/total`]: increment(1),
+  };
+
+  update(ref(database), updates)
+    .then(() => {
+      logger.info("Vote successfully recorded.");
+    })
+    .catch((error) => {
+      logger.error("Error updating votes:", error);
+    })
+    .finally(() => {
+      disconnectAfterUpdate();
+      enableVotingButtons();
+    });
+}
+
+/*========================================
+=            LEADERBOARD LOGIC         =
+========================================*/
 const rankingsDiv = document.getElementById("rankings");
 const refreshBtn = document.getElementById("refresh-rankings");
-
-const MIN_COMPARISONS = 5;        // baseline # of comparisons
-const MIN_REFRESH_INTERVAL = 10000; // 10 seconds
 const LAST_REFRESH_TIME_KEY = "arkpoll_lastRefresh";
 const LAST_LEADERBOARD_KEY = "arkpoll_lastLeaderboardHTML";
 
-/** 
- * Display cached leaderboard from localStorage (if available)
- * so user sees something immediately when the page loads.
- */
+// Load cached leaderboard from localStorage
 function loadCachedLeaderboard() {
   const cached = localStorage.getItem(LAST_LEADERBOARD_KEY);
-  if (cached) {
-    rankingsDiv.innerHTML = cached;
-  } else {
-    rankingsDiv.innerHTML = "<p>Loading...</p>";
-  }
+  rankingsDiv.innerHTML = cached || "<p>Loading...</p>";
+  logger.debug("Loaded cached leaderboard from localStorage.");
 }
 
-/** 
- * Display the current leaderboard by fetching from Firebase.
- * Then cache the result in localStorage.
- */
+// Fetch and display the current leaderboard from Firebase
 function displayRankings() {
-  const rankingsRef = ref(database, "votes");
-  get(rankingsRef)
+  ensureOnline();
+  const leaderboardQuery = query(
+    ref(database, "votes"),
+    orderByChild("total"),
+    startAt(LEADERBOARD_MIN_COMPARISONS)
+  );
+
+  get(leaderboardQuery)
     .then((snapshot) => {
       if (snapshot.exists()) {
-        const allVotes = snapshot.val();  // { operatorID: { wins, losses } }
+        const allVotes = snapshot.val();
         let rankings = [];
-
         for (const opID in allVotes) {
-          const { wins = 0, losses = 0 } = allVotes[opID];
-          const total = wins + losses;
-          if (total >= MIN_COMPARISONS) {
-            const winPct = wins / total;
-            rankings.push({ id: opID, wins, losses, total, winPct });
+          const { wins = 0, losses = 0, total = 0 } = allVotes[opID];
+          if (total >= LEADERBOARD_MIN_COMPARISONS) {
+            rankings.push({
+              id: opID,
+              wins,
+              losses,
+              total,
+              winPct: wins / total,
+            });
           }
         }
-
-        // Sort by win percentage (highest first), then by win count in case of ties, top 10
-        rankings.sort((a, b) => {
-          if (b.winPct === a.winPct) {
-            return b.wins - a.wins;
-          }
-          return b.winPct - a.winPct;
-        });
+        rankings.sort((a, b) =>
+          b.winPct === a.winPct ? b.wins - a.wins : b.winPct - a.winPct
+        );
         rankings = rankings.slice(0, 10);
 
-        // Build HTML
-        let rankingHTML;
-        if (rankings.length > 0) {
-          rankingHTML = `
+        const rankingHTML = rankings.length
+          ? `
             <table class="leaderboard-table">
               <thead>
                 <tr>
@@ -220,109 +324,121 @@ function displayRankings() {
                 </tr>
               </thead>
               <tbody>
-          ` + rankings.map((op, idx) => {
-            const operator = operators.find(o => o.id === op.id);
-            const displayName = operator ? operator.name : op.id;
-            return `
-              <tr>
-                <td>${idx + 1}</td>
-                <td>${displayName}</td>
-                <td>${(op.winPct * 100).toFixed(2)}%</td>
-                <td>${op.wins}</td>
-                <td>${op.losses}</td>
-                <td>${op.total}</td>
-              </tr>
-            `;
-          }).join("") + `
+                ${rankings
+                  .map((op, idx) => {
+                    // Use the operatorMap for fast lookup
+                    const operator = operatorMap.get(op.id);
+                    const displayName = operator ? operator.name : op.id;
+                    return `
+                      <tr>
+                        <td>${idx + 1}</td>
+                        <td>${displayName}</td>
+                        <td>${(op.winPct * 100).toFixed(2)}%</td>
+                        <td>${op.wins}</td>
+                        <td>${op.losses}</td>
+                        <td>${op.total}</td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
               </tbody>
             </table>
-          `;
-        } else {
-          rankingHTML = "<p>No operators meet the minimum comparisons yet.</p>";
-        }
+          `
+          : "<p>No operators meet the minimum comparisons yet.</p>";
 
-        // Update DOM & cache
         rankingsDiv.innerHTML = rankingHTML;
         localStorage.setItem(LAST_LEADERBOARD_KEY, rankingHTML);
+        logger.info("Leaderboard updated.");
+        disconnectAfterUpdate();
       } else {
-        // No data
         rankingsDiv.innerHTML = "<p>No votes yet.</p>";
         localStorage.removeItem(LAST_LEADERBOARD_KEY);
+        logger.warn("No votes found when fetching leaderboard.");
       }
     })
-    .catch((error) => {
-      console.error("Error fetching rankings:", error);
-    });
+    .catch((error) => logger.error("Error fetching rankings:", error));
 }
 
-/** 
- * Calculate how much time remains on the cooldown
- * Returns a positive # of ms if still on cooldown, otherwise 0.
- */
 function getRemainingCooldown() {
   const lastRefresh = parseInt(localStorage.getItem(LAST_REFRESH_TIME_KEY) || "0");
   const elapsed = Date.now() - lastRefresh;
-  if (elapsed < MIN_REFRESH_INTERVAL) {
-    return MIN_REFRESH_INTERVAL - elapsed; 
-  }
-  return 0;
+  return elapsed < LEADERBOARD_REFRESH_INTERVAL ? LEADERBOARD_REFRESH_INTERVAL - elapsed : 0;
 }
 
-/**
- * Disable the refresh button for `ms` milliseconds, then re-enable.
- */
 function disableRefreshButton(ms) {
   refreshBtn.disabled = true;
   refreshBtn.classList.add("disabled");
+  logger.debug(`Refresh button disabled for ${ms} ms.`);
   setTimeout(() => {
     refreshBtn.disabled = false;
     refreshBtn.classList.remove("disabled");
+    logger.debug("Refresh button re-enabled.");
   }, ms);
 }
 
-/**
- * Attempt an immediate refresh if cooldown is over, or show cached if not.
- */
+function refreshLeaderboard() {
+  displayRankings();
+  localStorage.setItem(LAST_REFRESH_TIME_KEY, Date.now().toString());
+  disableRefreshButton(LEADERBOARD_REFRESH_INTERVAL);
+  logger.info("Leaderboard refresh initiated.");
+}
+
 function maybeAutoRefreshLeaderboard() {
   const remaining = getRemainingCooldown();
   if (remaining === 0) {
-    // No cooldown, do an immediate refresh
-    displayRankings();
-    localStorage.setItem(LAST_REFRESH_TIME_KEY, Date.now().toString());
-    disableRefreshButton(MIN_REFRESH_INTERVAL);
+    refreshLeaderboard();
   } else {
-    // Still on cooldown, just show the cached leaderboard
-    // and schedule the refresh button to re-enable
     disableRefreshButton(remaining);
+    logger.debug("Leaderboard auto-refresh delayed due to cooldown.");
   }
 }
 
-/** 
- * User clicks "Refresh Rankings" manually.
- * If the cooldown is over, fetch & update. Otherwise, do nothing.
- */
 refreshBtn.addEventListener("click", () => {
-  const remaining = getRemainingCooldown();
-  if (remaining === 0) {
-    displayRankings();
-    localStorage.setItem(LAST_REFRESH_TIME_KEY, Date.now().toString());
-    disableRefreshButton(MIN_REFRESH_INTERVAL);
-  } 
-  // If still on cooldown, button is disabled anyway, so user can't click.
+  if (getRemainingCooldown() === 0) {
+    refreshLeaderboard();
+  } else {
+    logger.warn("Refresh button clicked but still in cooldown.");
+  }
 });
 
-/**
- * --------------------------------------------
- *           PAGE INITIALIZATION
- * --------------------------------------------
- */
-function init() {
-  initDarkMode();          // Apply saved dark mode preference
-  loadCachedLeaderboard(); // Show last known leaderboard immediately
-  loadOperatorData();      // Load operator data & show poll
+/*========================================
+=  TEMPORARY CONNECTION ON TAB VISIBILITY =
+========================================*/
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (disconnectTimer) clearTimeout(disconnectTimer);
+    disconnectTimer = setTimeout(() => {
+      goOffline(database);
+      isOnline = false;
+      logger.info("Tab hidden: disconnecting Firebase connection.");
+    }, DB_DISCONNECT_TIMEOUT);
+  } else {
+    if (disconnectTimer) {
+      clearTimeout(disconnectTimer);
+      disconnectTimer = null;
+    }
+    if (!isOnline) {
+      goOnline(database);
+      isOnline = true;
+    }
+    logger.info("Tab visible: reconnecting Firebase connection.");
+    disconnectTimer = setTimeout(() => {
+      goOffline(database);
+      isOnline = false;
+      logger.info("No activity: disconnecting Firebase connection after tab visible timeout.");
+    }, DB_DISCONNECT_TIMEOUT);
+  }
+});
 
-  // Attempt an auto-refresh if cooldown is expired, else show cached
+/*========================================
+=           PAGE INITIALIZATION        =
+========================================*/
+function init() {
+  initDarkMode();
+  loadCachedLeaderboard();
+  loadOperatorData();
   maybeAutoRefreshLeaderboard();
+  logger.info("Page initialization complete.");
 }
 
 init();
