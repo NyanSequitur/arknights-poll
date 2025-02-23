@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        // Set dark mode before rendering based on localStorage preference.
+        (function () {
+            if (localStorage.getItem("arkpoll_darkMode") === "true") {
+                document.documentElement.classList.add("dark-mode");
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Arknights Operator Poll</title>
+</head>
+<body>
+    <div id="center-container">
+        <h1>About Arknights Operator Poll</h1>
+        <p>
+            Arknights Operator Poll is a web application that lets fans compare Arknights operators through simple head-to-head voting.
+            Each round shows two operators and allows you to vote for the one you prefer. Your votes generate a leaderboard of the 
+            <img src="image.png" alt="Top Operator" style="height: 2em; vertical-align: middle;">s
+        </p>
+        <p>
+            The app is hosted at <a href="https://arkpoll.nyansequitur.gay" target="_blank">arkpoll.nyansequitur.gay</a>.
+        </p>
+        
+        <h2>Credits</h2>
+        <ul>
+            <li>
+                Art and assets by <a href="https://github.com/ArknightsAssets/ArknightsAssets" target="_blank">ArknightsAssets</a>.
+            </li>
+            <li>
+                Operator name mapping by <a href="https://github.com/PuppiizSunniiz/AN-EN-Tags" target="_blank">AN-EN-Tags</a>.
+            </li>
+            <li>
+                Inspiration from the video below.
+            </li>
+        </ul>
+
+        <div style="max-width: 560px; margin: 20px auto;">
+            <iframe width="560" height="315" src="https://www.youtube.com/embed/ALy6e7GbDRQ" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </div>
+        <p>
+            <a href="index.html">Return to Poll</a>
+        </p>
+    </div>
+</body>
+</html>

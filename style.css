@@ -91,3 +91,22 @@ cursor: not-allowed;
 
 
 }
+
+/* Styles for the social links section */
+#social-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+/* Styles for the Font Awesome icons */
+.social-icon {
+  font-size: 24px;
+  color: #333;
+  transition: color 0.3s;
+}
+
+.social-icon:hover {
+  color: #007BFF;
+}
