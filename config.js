@@ -9,7 +9,7 @@ const firebaseConfig = {
 };
 
 // Leaderboard settings
-const LEADERBOARD_MIN_COMPARISONS = 2;
+const LEADERBOARD_MIN_COMPARISONS = 5;
 const LEADERBOARD_REFRESH_INTERVAL = 10000; // in milliseconds
 
 // Database connection management
